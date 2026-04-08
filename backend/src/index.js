@@ -1,11 +1,21 @@
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = 3001;
 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
 app.use(cors());
 app.use(express.json());
+app.use(limiter);
 
 app.use('/search', require('./routes/search'));
 app.use('/supplier', require('./routes/supplier'));

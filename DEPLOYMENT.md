@@ -10,9 +10,341 @@ Both applications can be deployed to various cloud platforms. This guide covers:
 
 1. **Heroku** (Easiest, free tier available)
 2. **AWS EC2** (Full control, more setup)
-3. **Vercel** (Frontend-only, fastest)
+3. **Vercel** (Frontend + Backend, fastest modern approach) ⭐ **RECOMMENDED**
 4. **DigitalOcean** (Simple VPS option)
 5. **Docker** (Containerized approach)
+
+---
+
+# 🚀 Vercel Deployment (Recommended for Project B)
+
+## Why Vercel?
+
+✅ **Easy Setup** - Git-based deployment, no CLI learning curve  
+✅ **Fast Build** - Next.js-optimized, instant deployments  
+✅ **Serverless** - No server management  
+✅ **Generous Free Tier** - Unlimited projects, 100GB bandwidth  
+✅ **Automatic HTTPS** - SSL included  
+✅ **Preview Deployments** - Every branch gets live preview URL  
+
+## Deployment Architecture
+
+```
+GitHub Repository
+    ↓
+Vercel (Frontend + Backend as Serverless Functions)
+    ↓
+    ├─ React/Vite Frontend → CDN
+    ├─ Node.js API → Serverless Functions
+    └─ PostgreSQL Database → Vercel Postgres
+```
+
+## Prerequisites
+
+- GitHub account with repository pushed
+- Vercel account: https://vercel.com/signup
+- Project B code in Git repository
+
+## Step 1: Deploy Frontend to Vercel
+
+### 1.1 Create Vercel Project
+
+```bash
+# Option A: CLI (Easiest)
+npm i -g vercel
+cd database-frontend
+vercel
+
+# Follow prompts:
+# Project name: inventory-database-ui
+# Framework: Vite
+# Root directory: ./
+# Deploy: Yes
+
+# Output will show frontend URL:
+# ✅ Production: https://inventory-database-ui.vercel.app
+```
+
+### 1.2 Or Deploy via GitHub
+
+```bash
+# Push to GitHub
+git push origin main
+
+# Go to https://vercel.com/new
+# Select "Import Git Repository"
+# Choose: inventory-search
+# Configure:
+#   - Framework: Vite
+#   - Root Directory: database-frontend
+#   - Environment Variables: (see section below)
+# Deploy
+```
+
+### 1.3 Frontend Environment Variables
+
+In Vercel Dashboard:
+```
+Settings → Environment Variables → Add
+```
+
+```bash
+VITE_API_URL=https://your-backend-api.vercel.app
+```
+
+Update `database-frontend/src/App.jsx`:
+
+```javascript
+// Replace hardcoded localhost with env variable
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+// In axios calls:
+axios.get(`${API_BASE}/inventory`)
+axios.get(`${API_BASE}/search?q=${query}`)
+```
+
+## Step 2: Deploy Backend to Vercel (Serverless Functions)
+
+⚠️ **Important:** Vercel serverless has **no persistent storage**. SQLite files are deleted after request completes.
+
+### Option A: Use Vercel Postgres (Recommended)
+
+**Backend Refactoring Required**
+
+1. **Replace SQLite with PostgreSQL:**
+
+```bash
+cd database-backend
+npm install pg dotenv
+```
+
+2. **Update database connection in server.js:**
+
+```javascript
+// OLD (SQLite):
+// const sqlite3 = require('sqlite3');
+// const db = new sqlite3.Database('inventory.db');
+
+// NEW (PostgreSQL):
+const { Pool } = require('pg');
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+});
+
+const db = {
+  all: async (sql, params) => {
+    const res = await pool.query(sql, params);
+    return res.rows;
+  },
+  get: async (sql, params) => {
+    const res = await pool.query(sql, params);
+    return res.rows[0];
+  },
+  run: async (sql, params) => {
+    return await pool.query(sql, params);
+  }
+};
+```
+
+3. **Create `api/index.js` for Vercel serverless:**
+
+```javascript
+// api/index.js
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Import all routes from server.js
+const setupRoutes = require('../database-backend/server');
+setupRoutes(app);
+
+export default app;
+```
+
+4. **Update vercel.json:**
+
+```json
+{
+  "buildCommand": "cd database-backend && npm install",
+  "env": {
+    "DATABASE_URL": "@database_url"
+  },
+  "functions": {
+    "api/index.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}
+```
+
+5. **Deploy:**
+
+```bash
+vercel env add DATABASE_URL
+# Paste your PostgreSQL connection string
+
+vercel deploy
+```
+
+### Option B: Keep Backend on Railway (Easier - No Code Changes)
+
+Don't want to refactor? Keep Node/Express/SQLite separate:
+
+**Deploy Backend to Railway.app:**
+
+```bash
+# 1. Sign up at https://railway.app
+# 2. Create new project
+# 3. Connect GitHub repository
+# 4. Select database-backend folder
+# 5. Add SQLite persistence (set root directory for persistent files)
+# 6. Deploy
+
+# Result: https://your-app.railway.app (backend URL)
+```
+
+Then update frontend env variables to point to Railway backend:
+
+```
+VITE_API_URL=https://your-app.railway.app
+```
+
+**This is simpler** - no code changes needed, just deploy as-is.
+
+## Step 3: Environment Variables
+
+### Frontend (.env.production)
+
+```bash
+VITE_API_URL=https://inventory-api.vercel.app
+```
+
+### Backend (Vercel Secrets)
+
+In Vercel Dashboard → Settings → Environment Variables:
+
+```bash
+NODE_ENV=production
+PORT=3000
+DATABASE_URL=postgresql://user:pass@host/dbname
+CORS_ORIGIN=https://inventory-database-ui.vercel.app
+```
+
+## Step 4: Configure CORS
+
+Update `database-backend/server.js`:
+
+```javascript
+const cors = require('cors');
+const API_URL = process.env.VITE_API_URL || 'http://localhost:5174';
+
+app.use(cors({
+  origin: API_URL,
+  credentials: true
+}));
+```
+
+## Step 5: Verify Deployment
+
+### Test Frontend
+
+```bash
+# Visit https://inventory-database-ui.vercel.app
+# Should load React app
+```
+
+### Test Backend
+
+```bash
+# Test API endpoint
+curl "https://inventory-api.vercel.app/health"
+# Response: {"status":"OK"}
+
+# Test search
+curl "https://inventory-api.vercel.app/search?q=mouse"
+```
+
+### Test Full Integration
+
+```bash
+# In browser: https://inventory-database-ui.vercel.app
+# Create supplier → Should hit backend API
+# Search inventory → Should return results
+# Check DevTools Network tab for API calls to correct URL
+```
+
+## Troubleshooting Vercel Deployment
+
+### Issue: Frontend loads but API calls fail
+
+```
+Error: CORS error or 404
+```
+
+**Solution:**
+1. Check VITE_API_URL environment variable is set
+2. Verify backend is deployed and `/health` endpoint works
+3. Update CORS origin in backend to match frontend URL
+
+### Issue: Serverless function timeout
+
+```
+Error: 504 Gateway Timeout
+```
+
+**Solution:**
+1. Increase function timeout in vercel.json (max 60s on Pro)
+2. Optimize database queries
+3. Add caching for search queries
+
+### Issue: Database connection fails
+
+```
+Error: connect ECONNREFUSED or connection pool error
+```
+
+**Solution:**
+1. Verify DATABASE_URL environment variable is correct
+2. Check PostgreSQL server is running (if Option A)
+3. Ensure IP whitelist includes Vercel's servers
+
+## Deployment Checklist
+
+### Frontend
+- [ ] GitHub repository updated with database-frontend code
+- [ ] VITE_API_URL environment variable set
+- [ ] Vercel project created and deployed
+- [ ] Preview URL working: https://inventory-database-ui.vercel.app
+
+### Backend
+- [ ] Database configured (PostgreSQL or SQLite on Railway)
+- [ ] Environment variables set (DATABASE_URL, CORS_ORIGIN)
+- [ ] API deployed and `/health` endpoint responds
+- [ ] CORS configured for frontend URL
+
+### Integration
+- [ ] Frontend loads successfully
+- [ ] API calls from frontend hit correct backend URL
+- [ ] Create/Read/Update/Delete operations work
+- [ ] Search feature returns results
+- [ ] Category dropdown populated correctly
+
+## Cost Estimate
+
+| Service | Free Tier | Cost |
+|---------|-----------|------|
+| Vercel Frontend | ✅ Unlimited | Free |
+| Vercel Serverless | ✅ 100 GB bandwidth | Free → $0.50/GB |
+| Vercel Postgres | ✅ 3 projects | $35/month |
+| Railway Backend | ✅ $5/month credit | + Electricity |
+| Railway Postgres | ✅ $5/month credit | + Electricity |
+
+**Recommendation:** Railway for both backend + database is cheapest ($5-10/month stable pricing)
 
 ---
 

@@ -20,7 +20,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const API_BASE = 'http://localhost:5000';
+  // Use environment variable for deployed URL, fallback to localhost for development
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   // Fetch categories on component mount
   useEffect(() => {
